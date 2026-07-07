@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import requests
 import uuid
+import json
 
 app = FastAPI()
 
@@ -65,15 +66,31 @@ def chat_endpoint(req: ChatRequest):
     }
 
     try:
-        response = requests.post(API_URL, headers=headers, json=payload, timeout=15)
+        # We must use stream=True here because Overchat forces streaming anyway
+        response = requests.post(API_URL, headers=headers, json=payload, stream=True, timeout=30)
         
         if response.status_code != 200:
             return {"error": "Upstream API error", "details": response.text}
 
-        data = response.json()
-        ai_message = data['choices'][0]['message']['content']
+        full_response = ""
         
-        return {"response": ai_message}
+        # Read the stream and stitch the chunks together
+        for line in response.iter_lines():
+            if line:
+                decoded = line.decode("utf-8")
+                if decoded.startswith("data:"):
+                    data_str = decoded[5:].strip()
+                    if data_str == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data_str)
+                        token = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                        if token:
+                            full_response += token
+                    except:
+                        pass
+        
+        return {"response": full_response}
 
     except Exception as e:
         return {"error": str(e)}

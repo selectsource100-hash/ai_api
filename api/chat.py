@@ -19,7 +19,7 @@ class ChatRequest(BaseModel):
     prompt: str
     history: list = []
 
-@app.post("/")
+@app.post("/api/chat")
 def chat_endpoint(req: ChatRequest):
     device_uuid = str(uuid.uuid4())
     chat_id = str(uuid.uuid4())

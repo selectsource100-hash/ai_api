@@ -4,6 +4,7 @@ from pydantic import BaseModel
 import requests
 import uuid
 import json
+import re
 
 app = FastAPI()
 
@@ -60,35 +61,24 @@ def chat_endpoint(req: ChatRequest):
         "frequency_penalty": 0,
         "max_tokens": 4000,
         "presence_penalty": 0,
-        "stream": False,
+        "stream": True,
         "temperature": 0.5,
         "top_p": 0.95
     }
 
     try:
-        # We must use stream=True here because Overchat forces streaming anyway
-        response = requests.post(API_URL, headers=headers, json=payload, stream=True, timeout=30)
+        response = requests.post(API_URL, headers=headers, json=payload, timeout=30)
         
         if response.status_code != 200:
             return {"error": "Upstream API error", "details": response.text}
 
-        full_response = ""
+        # Sometimes Vercel buffers the whole stream into one text block.
+        # This regex finds every "content":"..." in the raw text and stitches it together.
+        raw_text = response.text
+        tokens = re.findall(r'"content":"(.*?)"', raw_text)
         
-        # Read the stream and stitch the chunks together
-        for line in response.iter_lines():
-            if line:
-                decoded = line.decode("utf-8")
-                if decoded.startswith("data:"):
-                    data_str = decoded[5:].strip()
-                    if data_str == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(data_str)
-                        token = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
-                        if token:
-                            full_response += token
-                    except:
-                        pass
+        # Clean up escaped characters (like \n)
+        full_response = "".join(tokens).encode().decode('unicode_escape')
         
         return {"response": full_response}
 
